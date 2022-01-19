@@ -1,0 +1,224 @@
+# Generated 2022-01-19 from:
+# /scratch/elec/t405-puhe/p/porjazd1/Metadata_Classification/TCN/asr_topic_speechbrain/mgb_asr/hyperparams.yaml
+# yamllint disable
+# Seed needs to be set at top of yaml, before objects with parameters are made
+seed: 1234
+__set_seed: !apply:torch.manual_seed [1234]
+
+
+output_folder: output_folder
+
+label_encoder_file: output_folder/label_encoder.txt
+
+train_log: output_folder/train_log.txt
+train_logger: !new:speechbrain.utils.train_logger.FileTrainLogger
+  save_file: output_folder/train_log.txt
+
+
+wer_file: output_folder/wer_test.txt
+cer_file: output_folder/cer_test.txt
+
+decode_text_file: output_folder/text_test.txt
+
+# Feature parameters
+sample_rate: 16000
+n_fft: 800
+n_mels: 40
+
+
+# Training params
+N_epochs: 100
+number_of_ctc_epochs: 25
+dataloader_options:
+  batch_size: 10
+  shuffle: false
+label_smoothing: 0.1
+lr: 0.0001
+
+
+# Special tokens and labels
+blank_index: 0
+bos_index: 0
+eos_index: 0
+unk_index: 0
+
+
+tokenizer: !new:sentencepiece.SentencePieceProcessor
+  model_file: output_folder/tokenizer/500_unigram.model
+
+
+# Model parameters
+dropout: 0.2
+dnn_neurons: 768
+emb_size: 128
+output_neurons: 500
+dec_neurons: 512
+kernel_size: 4
+attn_dim: 512
+ctc_weight: 0.3
+
+
+# Decoding parameters
+min_decode_ratio: 0.0
+max_decode_ratio: 1.0
+valid_beam_size: 1
+test_beam_size: 80
+eos_threshold: 1.5
+using_max_attn_shift: true
+max_attn_shift: 240
+ctc_weight_decode: 0.0
+coverage_penalty: 1.5
+temperature: 1.25
+
+
+compute_features: &id005 !new:speechbrain.lobes.features.Fbank
+  sample_rate: 16000
+  n_fft: 800
+  n_mels: 40
+
+mean_var_norm: &id007 !new:speechbrain.processing.features.InputNormalization
+
+
+  norm_type: global
+
+
+encoder: &id006 !new:model.TemporalConvNet
+  num_inputs: 40
+  num_channels: [768, 768, 768, 768]
+  num_classes: 500
+  kernel_size: 4
+  dropout: 0.2
+
+
+# Attention-based RNN decoder.
+decoder: &id002 !new:speechbrain.nnet.RNN.AttentionalRNNDecoder
+  enc_dim: 768
+  input_size: 128
+  rnn_type: gru
+  attn_type: location
+  hidden_size: 512
+  attn_dim: 512
+  num_layers: 1
+  scaling: 1.0
+  channels: 5
+  kernel_size: 50
+  re_init: true
+  dropout: 0.2
+
+
+# Embedding (from indexes to an embedding space of dimension emb_size).
+embedding: &id001 !new:speechbrain.nnet.embedding.Embedding
+  num_embeddings: 500
+  embedding_dim: 128
+
+
+ctc_lin: &id004 !new:speechbrain.nnet.linear.Linear
+
+
+# save the model
+  input_size: 768
+  n_neurons: 500
+
+
+# Linear transformation on the top of the decoder.
+seq_lin: &id003 !new:speechbrain.nnet.linear.Linear
+  input_size: 512
+  n_neurons: 500
+
+
+log_softmax: !new:speechbrain.nnet.activations.Softmax
+  apply_log: true
+
+
+
+ctc_cost: !name:speechbrain.nnet.losses.ctc_loss
+  blank_index: 0
+
+
+opt_class: !name:torch.optim.Adam
+  lr: 0.0001
+
+
+lr_annealing: &id009 !new:speechbrain.nnet.schedulers.NewBobScheduler
+  initial_value: 0.0001
+  improvement_threshold: 0.0025
+  annealing_factor: 0.8
+  patient: 100
+
+epoch_counter: &id010 !new:speechbrain.utils.epoch_loop.EpochCounter
+  limit: 100
+
+
+#label_encoder: sb.dataio.encoder.CTCTextEncoder()
+label_encoder: !new:speechbrain.dataio.encoder.CTCTextEncoder
+
+
+# Functions that compute the statistics to track during the validation step.
+error_rate_computer: !name:speechbrain.utils.metric_stats.ErrorRateStats
+
+cer_computer: !name:speechbrain.utils.metric_stats.ErrorRateStats
+  split_tokens: true
+
+
+# ======================= DECODING ================
+valid_search: !new:speechbrain.decoders.S2SRNNBeamSearcher
+  embedding: *id001
+  decoder: *id002
+  linear: *id003
+  ctc_linear: *id004
+  bos_index: 0
+  eos_index: 0
+  blank_index: 0
+  min_decode_ratio: 0.0
+  max_decode_ratio: 1.0
+  beam_size: 1
+  eos_threshold: 1.5
+  using_max_attn_shift: true
+  max_attn_shift: 240
+  coverage_penalty: 1.5
+  temperature: 1.25
+
+# The final decoding on the test set can be more computationally demanding.
+# In this case, we use the LM + CTC probabilities during decoding as well.
+# Please, remove this part if you need a faster decoder.
+test_search: !new:speechbrain.decoders.S2SRNNBeamSearcher
+  embedding: *id001
+  decoder: *id002
+  linear: *id003
+  ctc_linear: *id004
+  bos_index: 0
+  eos_index: 0
+  blank_index: 0
+  min_decode_ratio: 0.0
+  max_decode_ratio: 1.0
+  beam_size: 80
+  eos_threshold: 1.5
+  using_max_attn_shift: true
+  max_attn_shift: 240
+  coverage_penalty: 1.5
+  ctc_weight: 0.0
+  temperature: 1.25
+
+
+
+modules:
+  compute_features: *id005
+  encoder: *id006
+  embedding: *id001
+  decoder: *id002
+  seq_lin: *id003
+  ctc_lin: *id004
+  mean_var_norm: *id007
+model: &id008 !new:torch.nn.ModuleList
+- - *id006
+  - *id001
+  - *id002
+  - *id005
+  - *id003
+  - *id004
+checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
+  checkpoints_dir: output_folder
+  recoverables:
+    model: *id008
+    scheduler: *id009
+    counter: *id010
